@@ -50,8 +50,9 @@ def log_normalize(a, axis=None):
 
 def iter_from_X_lengths(X, lengths):
     if lengths is None:
-        yield 0, len(X)
-    else:
+        yield X
+
+    elif len(X.shape) == 2:
         n_samples = X.shape[0]
         end = np.cumsum(lengths).astype(np.int32)
         start = end - lengths
@@ -60,7 +61,15 @@ def iter_from_X_lengths(X, lengths):
                              .format(n_samples, lengths))
 
         for i in range(len(lengths)):
-            yield start[i], end[i]
+            yield X[start[i]:end[i]]
+
+    elif len(X.shape) == 3:
+        for ix in range(X.shape[0]):
+            for jx in range(lengths[ix]):
+                yield X[ix, range(jx+1), :]
+
+    else:
+        raise ValueError("unknown shape {!s}".format(X.shape))
 
 
 def log_mask_zero(a):

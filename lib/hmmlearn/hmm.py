@@ -12,13 +12,14 @@ The :mod:`hmmlearn.hmm` module implements hidden Markov models.
 
 import numpy as np
 from scipy.special import logsumexp
-from sklearn import cluster
+from sklearn import cluster, decomposition
 from sklearn.utils import check_random_state
+from sklearn.utils.validation import check_is_fitted
 
 from . import _utils
+from .base import DECODER_ALGORITHMS, _BaseHMM
 from .stats import log_multivariate_normal_density
-from .base import _BaseHMM
-from .utils import iter_from_X_lengths, normalize, fill_covars
+from .utils import fill_covars, iter_from_X_lengths, normalize
 
 __all__ = ["GMMHMM", "GaussianHMM", "MultinomialHMM"]
 
@@ -983,3 +984,126 @@ class GMMHMM(_BaseHMM):
         self.weights_ = new_weights
         self.means_ = new_means
         self.covars_ = new_cov
+
+'''
+Extension of MultinomialHMM such that each state emits a document of length Ni
+where each document is drawn from a multinomial distribution with Dirichlet
+priors defined by LDA.
+'''
+class LDAHMM(MultinomialHMM):
+    def __init__(self, lda=None, n_components=10,
+                 startprob_prior=1.0, transmat_prior=1.0,
+                 algorithm="viterbi", random_state=None,
+                 n_iter=10, tol=1e-2, verbose=False,
+                 params="ste", init_params="ste"):
+        MultinomialHMM.__init__(self, n_components=n_components,
+                                startprob_prior=startprob_prior,
+                                transmat_prior=transmat_prior,
+                                algorithm=algorithm,
+                                random_state=random_state,
+                                n_iter=n_iter, tol=tol, verbose=verbose,
+                                params=params, init_params=init_params)
+        if lda is None:
+            lda = decomposition.LatentDirichletAllocation(n_components=n_components, random_state=random_state, max_iter=n_iter,
+                                                          perp_tol=tol, evaluate_every=5, learning_method="batch", n_jobs=-2)
+        self.set_params(lda=lda)
+
+    def _init(self, X, lengths=None):
+        init = 1. / self.n_components
+        if 's' in self.init_params or not hasattr(self, "startprob_"):
+            self.startprob_ = np.full(self.n_components, init)
+        if 't' in self.init_params or not hasattr(self, "transmat_"):
+            self.transmat_ = np.full((self.n_components, self.n_components),
+                                     init)
+        self.random_state = check_random_state(self.random_state)
+        self.n_features = X.shape[-1]
+
+        self.lda.total_samples = np.sum(lengths)
+        assert(self.lda.n_components == self.n_components)
+        for Xu in iter_from_X_lengths(X, lengths):
+            self.lda.partial_fit(Xu)
+
+    def _check(self):
+        super(MultinomialHMM, self)._check()
+
+    def fit(self, X, lengths=None):
+        self._init(X, lengths=lengths)
+        self._check()
+
+        self.monitor_._reset()
+        for iter in range(self.n_iter):
+            stats = self._initialize_sufficient_statistics()
+            curr_logprob = 0
+            for Xu in iter_from_X_lengths(X, lengths):
+                framelogprob = self._compute_log_likelihood(Xu)
+                logprob, fwdlattice = self._do_forward_pass(framelogprob)
+                curr_logprob += logprob
+                bwdlattice = self._do_backward_pass(framelogprob)
+                posteriors = self._compute_posteriors(fwdlattice, bwdlattice)
+                self._accumulate_sufficient_statistics(stats, Xu, framelogprob,
+                                                       posteriors, fwdlattice,
+                                                       bwdlattice)
+
+            # XXX must be before convergence check, because otherwise
+            #     there won't be any updates for the case ``n_iter=1``.
+            self._do_mstep(stats)
+
+            self.monitor_.report(curr_logprob)
+            if self.monitor_.converged:
+                break
+
+        return self
+
+    def _compute_log_likelihood(self, X):
+        return np.log(self.lda.transform(X))
+
+    def _do_mstep(self, stats):
+        super(MultinomialHMM, self)._do_mstep(stats)
+
+        # weight = np.power(self.lda.learning_offset + self.lda.n_batch_iter_,
+        #                   -self.lda.learning_decay)
+        # self.lda.components_ *= (1 - weight)
+        # self.lda.components_ += (weight * (self.lda.topic_word_prior_ + stats["obs"]))
+
+        # # update `component_` related variables
+        # self.lda.exp_dirichlet_component_ = np.exp(_dirichlet_expectation_2d(self.lda.components_))
+        # self.lda.n_batch_iter_ += 1
+
+        # updateable_df = pd.DataFrame(stats["obs"], columns=encoder.classes_)
+        # current_df = pd.DataFrame(self.lda.components_, columns=encoder.classes_)
+        # updateable_df.T.describe().round(3)
+        # current_df.T.describe().round(3)
+        # import pdb; pdb.set_trace()
+
+    def _accumulate_sufficient_statistics(self, stats, X, framelogprob, posteriors,
+                                          fwdlattice, bwdlattice):
+        super(MultinomialHMM, self)._accumulate_sufficient_statistics(stats, X, framelogprob,
+                                                                      posteriors, fwdlattice,
+                                                                      bwdlattice)
+        if 'e' in self.params:
+            for ix, jx in zip(*np.where(X > 0)):
+                stats['obs'][:, jx] += posteriors[ix]
+
+    def decode(self, X, lengths=None, algorithm=None):
+        check_is_fitted(self, "startprob_")
+        self._check()
+
+        algorithm = algorithm or self.algorithm
+        if algorithm not in DECODER_ALGORITHMS:
+            raise ValueError("Unknown decoder {!r}".format(algorithm))
+
+        decoder = {
+            "viterbi": self._decode_viterbi,
+            "map": self._decode_map
+        }[algorithm]
+
+        logprob = 0
+        state_sequence = []
+        n_samples = X.shape[0]
+        for Xu in iter_from_X_lengths(X, lengths):
+            # XXX decoder works on a single sample at a time!
+            logprobij, state_sequenceij = decoder(Xu)
+            logprob += logprobij
+            state_sequence.append(state_sequenceij)
+
+        return logprob, np.array(state_sequence).flatten()

@@ -11,8 +11,7 @@ from sklearn.utils import check_array, check_random_state
 from sklearn.utils.validation import check_is_fitted
 
 from . import _hmmc
-from .utils import normalize, log_normalize, iter_from_X_lengths, log_mask_zero
-
+from .utils import iter_from_X_lengths, log_mask_zero, log_normalize, normalize
 
 #: Supported decoder algorithms.
 DECODER_ALGORITHMS = frozenset(("viterbi", "map"))
@@ -244,15 +243,15 @@ class _BaseHMM(BaseEstimator):
 
         X = check_array(X)
         n_samples = X.shape[0]
+        posteriors = []
         logprob = 0
-        posteriors = np.zeros((n_samples, self.n_components))
-        for i, j in iter_from_X_lengths(X, lengths):
-            framelogprob = self._compute_log_likelihood(X[i:j])
+        for Xu in iter_from_X_lengths(X, lengths):
+            framelogprob = self._compute_log_likelihood(Xu)
             logprobij, fwdlattice = self._do_forward_pass(framelogprob)
             logprob += logprobij
 
             bwdlattice = self._do_backward_pass(framelogprob)
-            posteriors[i:j] = self._compute_posteriors(fwdlattice, bwdlattice)
+            posteriors.append(self._compute_posteriors(fwdlattice, bwdlattice))
         return logprob, posteriors
 
     def score(self, X, lengths=None):
