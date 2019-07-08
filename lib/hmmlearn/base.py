@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import logging
 import string
 import sys
 from collections import deque
@@ -103,9 +104,7 @@ class ConvergenceMonitor(object):
         """
         if self.verbose:
             delta = logprob - self.history[-1] if self.history else np.nan
-            message = self._template.format(
-                iter=self.iter + 1, logprob=logprob, delta=delta)
-            print(message, file=sys.stderr)
+            logging.debug(self._template.format(iter=self.iter + 1, logprob=logprob, delta=delta))
 
         self.history.append(logprob)
         self.iter += 1
@@ -463,6 +462,8 @@ class _BaseHMM(BaseEstimator):
         self._check()
 
         self.monitor_._reset()
+        if self.verbose:
+            logging.debug("Starting EM run")
         for iter in range(self.n_iter):
             stats = self._initialize_sufficient_statistics()
             curr_logprob = 0
