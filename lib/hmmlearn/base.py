@@ -8,11 +8,11 @@ from collections import deque
 import numpy as np
 from scipy.special import logsumexp
 from sklearn.base import BaseEstimator
-from sklearn.utils import check_array, check_random_state
+from sklearn.utils import check_random_state
 from sklearn.utils.validation import check_is_fitted
 
 from . import _hmmc
-from .utils import iter_from_X_lengths, log_mask_zero, log_normalize, normalize
+from .utils import iter_from_X_lengths, log_mask_zero, log_normalize, normalize, check_array
 
 #: Supported decoder algorithms.
 DECODER_ALGORITHMS = frozenset(("viterbi", "map"))
@@ -67,7 +67,7 @@ class ConvergenceMonitor(object):
     ...                                   model.monitor_.n_iter,
     ...                                   model.monitor_.verbose)
     """
-    _template = "{iter:>10d} {logprob:>16.4f} {delta:>+16.4f}"
+    _template = "      {iter:>2d} {logprob:>16.4f} {delta:>+16.4f}"
 
     def __init__(self, tol, n_iter, verbose):
         self.tol = tol
@@ -282,8 +282,8 @@ class _BaseHMM(BaseEstimator):
         X = check_array(X)
         # XXX we can unroll forward pass for speed and memory efficiency.
         logprob = 0
-        for i, j in iter_from_X_lengths(X, lengths):
-            framelogprob = self._compute_log_likelihood(X[i:j])
+        for Xu in iter_from_X_lengths(X, lengths):
+            framelogprob = self._compute_log_likelihood(Xu)
             logprobij, _fwdlattice = self._do_forward_pass(framelogprob)
             logprob += logprobij
         return logprob
@@ -343,14 +343,15 @@ class _BaseHMM(BaseEstimator):
 
         X = check_array(X)
         n_samples = X.shape[0]
+        state_sequence = []
         logprob = 0
-        state_sequence = np.empty(n_samples, dtype=int)
-        for i, j in iter_from_X_lengths(X, lengths):
+        for Xu in iter_from_X_lengths(X, lengths):
             # XXX decoder works on a single sample at a time!
-            logprobij, state_sequenceij = decoder(X[i:j])
+            logprobij, state_sequenceij = decoder(Xu)
+            state_sequence.append(state_sequenceij)
             logprob += logprobij
-            state_sequence[i:j] = state_sequenceij
 
+        state_sequence = np.array(state_sequence).flatten().astype(int)
         return logprob, state_sequence
 
     def predict(self, X, lengths=None):
@@ -467,14 +468,14 @@ class _BaseHMM(BaseEstimator):
         for iter in range(self.n_iter):
             stats = self._initialize_sufficient_statistics()
             curr_logprob = 0
-            for i, j in iter_from_X_lengths(X, lengths):
-                framelogprob = self._compute_log_likelihood(X[i:j])
+            for Xu in iter_from_X_lengths(X, lengths):
+                framelogprob = self._compute_log_likelihood(Xu)
                 logprob, fwdlattice = self._do_forward_pass(framelogprob)
                 curr_logprob += logprob
                 bwdlattice = self._do_backward_pass(framelogprob)
                 posteriors = self._compute_posteriors(fwdlattice, bwdlattice)
                 self._accumulate_sufficient_statistics(
-                    stats, X[i:j], framelogprob, posteriors, fwdlattice,
+                    stats, Xu, framelogprob, posteriors, fwdlattice,
                     bwdlattice)
 
             # XXX must be before convergence check, because otherwise

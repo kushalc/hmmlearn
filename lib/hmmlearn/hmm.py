@@ -391,8 +391,8 @@ class MultinomialHMM(_BaseHMM):
         if 'e' in self.init_params:
             if not hasattr(self, "n_features"):
                 symbols = set()
-                for i, j in iter_from_X_lengths(X, lengths):
-                    symbols |= set(X[i:j].flatten())
+                for Xu in iter_from_X_lengths(X, lengths):
+                    symbols |= set(Xu.flatten())
                 self.n_features = len(symbols)
             self.emissionprob_ = self.random_state \
                 .rand(self.n_components, self.n_features)
@@ -1009,12 +1009,7 @@ class LDAHMM(MultinomialHMM):
         self.set_params(lda=lda)
 
     def _init(self, X, lengths=None):
-        init = 1. / self.n_components
-        if 's' in self.init_params or not hasattr(self, "startprob_"):
-            self.startprob_ = np.full(self.n_components, init)
-        if 't' in self.init_params or not hasattr(self, "transmat_"):
-            self.transmat_ = np.full((self.n_components, self.n_components),
-                                     init)
+        super(MultinomialHMM, self)._init(X, lengths)
         self.random_state = check_random_state(self.random_state)
         self.n_features = X.shape[-1]
 
@@ -1025,34 +1020,6 @@ class LDAHMM(MultinomialHMM):
 
     def _check(self):
         super(MultinomialHMM, self)._check()
-
-    def fit(self, X, lengths=None):
-        self._init(X, lengths=lengths)
-        self._check()
-
-        self.monitor_._reset()
-        for iter in range(self.n_iter):
-            stats = self._initialize_sufficient_statistics()
-            curr_logprob = 0
-            for Xu in iter_from_X_lengths(X, lengths):
-                framelogprob = self._compute_log_likelihood(Xu)
-                logprob, fwdlattice = self._do_forward_pass(framelogprob)
-                curr_logprob += logprob
-                bwdlattice = self._do_backward_pass(framelogprob)
-                posteriors = self._compute_posteriors(fwdlattice, bwdlattice)
-                self._accumulate_sufficient_statistics(stats, Xu, framelogprob,
-                                                       posteriors, fwdlattice,
-                                                       bwdlattice)
-
-            # XXX must be before convergence check, because otherwise
-            #     there won't be any updates for the case ``n_iter=1``.
-            self._do_mstep(stats)
-
-            self.monitor_.report(curr_logprob)
-            if self.monitor_.converged:
-                break
-
-        return self
 
     def _compute_log_likelihood(self, X):
         return np.log(self.lda.transform(X))
@@ -1083,27 +1050,3 @@ class LDAHMM(MultinomialHMM):
         if 'e' in self.params:
             for ix, jx in zip(*np.where(X > 0)):
                 stats['obs'][:, jx] += posteriors[ix]
-
-    def decode(self, X, lengths=None, algorithm=None):
-        check_is_fitted(self, "startprob_")
-        self._check()
-
-        algorithm = algorithm or self.algorithm
-        if algorithm not in DECODER_ALGORITHMS:
-            raise ValueError("Unknown decoder {!r}".format(algorithm))
-
-        decoder = {
-            "viterbi": self._decode_viterbi,
-            "map": self._decode_map
-        }[algorithm]
-
-        logprob = 0
-        state_sequence = []
-        n_samples = X.shape[0]
-        for Xu in iter_from_X_lengths(X, lengths):
-            # XXX decoder works on a single sample at a time!
-            logprobij, state_sequenceij = decoder(Xu)
-            logprob += logprobij
-            state_sequence.append(state_sequenceij)
-
-        return logprob, np.array(state_sequence).flatten()

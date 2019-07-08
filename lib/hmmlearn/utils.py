@@ -1,4 +1,5 @@
 import numpy as np
+import sklearn
 from scipy.special import logsumexp
 
 
@@ -47,6 +48,13 @@ def log_normalize(a, axis=None):
         a_lse = logsumexp(a, axis)
     a -= a_lse[:, np.newaxis]
 
+def check_array(X):
+    if len(X.shape) == 2:
+        return sklearn.utils.check_array(X)
+    elif len(X.shape) == 3:
+        return X
+    else:
+        raise ValueError("unknown shape: {!s}".format(X.shape))
 
 def iter_from_X_lengths(X, lengths):
     if lengths is None:
