@@ -1018,8 +1018,9 @@ class LDAHMM(MultinomialHMM):
 
         self.lda.total_samples = np.sum(lengths)
         assert(self.lda.n_components == self.n_components)
-        for Xu in iter_from_X_lengths(X, lengths):
-            self.lda.partial_fit(Xu)
+        if not hasattr(self.lda, "components_"):
+            for Xu in iter_from_X_lengths(X, lengths):
+                self.lda.partial_fit(Xu)
 
     def _check(self):
         super(MultinomialHMM, self)._check()
