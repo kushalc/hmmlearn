@@ -996,6 +996,12 @@ class LDAHMM(MultinomialHMM):
                  algorithm="viterbi", random_state=None,
                  n_iter=10, tol=1e-2, verbose=False,
                  params="ste", init_params="ste"):
+        if lda is None:
+            lda = decomposition.LatentDirichletAllocation(n_components=n_components, random_state=random_state, max_iter=25,
+                                                          evaluate_every=5, learning_method="batch")
+        else:
+            n_components = lda.components_.shape[0]
+
         MultinomialHMM.__init__(self, n_components=n_components,
                                 startprob_prior=startprob_prior,
                                 transmat_prior=transmat_prior,
@@ -1003,9 +1009,6 @@ class LDAHMM(MultinomialHMM):
                                 random_state=random_state,
                                 n_iter=n_iter, tol=tol, verbose=verbose,
                                 params=params, init_params=init_params)
-        if lda is None:
-            lda = decomposition.LatentDirichletAllocation(n_components=n_components, random_state=random_state, max_iter=n_iter,
-                                                          perp_tol=tol, evaluate_every=5, learning_method="batch", n_jobs=-2)
         self.set_params(lda=lda)
 
     def _init(self, X, lengths=None):
