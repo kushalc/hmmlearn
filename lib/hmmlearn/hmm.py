@@ -1000,7 +1000,7 @@ class LDAHMM(MultinomialHMM):
             lda = decomposition.LatentDirichletAllocation(n_components=n_components, random_state=random_state, max_iter=25,
                                                           evaluate_every=5, learning_method="batch")
         else:
-            n_components = lda.components_.shape[0]
+            n_components = lda.n_components
 
         MultinomialHMM.__init__(self, n_components=n_components,
                                 startprob_prior=startprob_prior,
@@ -1010,6 +1010,13 @@ class LDAHMM(MultinomialHMM):
                                 n_iter=n_iter, tol=tol, verbose=verbose,
                                 params=params, init_params=init_params)
         self.set_params(lda=lda)
+
+    def set_params(self, **kwargs):
+        if "n_components" in kwargs:
+            kwargs["lda__n_components"] = kwargs["n_components"]
+            if hasattr(self.lda, "components_"):
+                delattr(self.lda, "components_")
+        super().set_params(**kwargs)
 
     def _init(self, X, lengths=None):
         super(MultinomialHMM, self)._init(X, lengths)
@@ -1046,6 +1053,43 @@ class LDAHMM(MultinomialHMM):
         # current_df.T.describe().round(3)
         # import pdb; pdb.set_trace()
 
+    def _accumulate_sufficient_statistics(self, stats, X, framelogprob, posteriors,
+                                          fwdlattice, bwdlattice):
+        super(MultinomialHMM, self)._accumulate_sufficient_statistics(stats, X, framelogprob,
+                                                                      posteriors, fwdlattice,
+                                                                      bwdlattice)
+        if 'e' in self.params:
+            for ix, jx in zip(*np.where(X > 0)):
+                stats['obs'][:, jx] += posteriors[ix]
+
+class HTMM(MultinomialHMM):
+    def __init__(self, lda=None, n_components=10,
+                 startprob_prior=1.0, transmat_prior=1.0,
+                 algorithm="viterbi", random_state=None,
+                 n_iter=10, tol=1e-2, verbose=False,
+                 params="ste", init_params="ste"):
+        MultinomialHMM.__init__(self, n_components=n_components,
+                                startprob_prior=startprob_prior,
+                                transmat_prior=transmat_prior,
+                                algorithm=algorithm,
+                                random_state=random_state,
+                                n_iter=n_iter, tol=tol, verbose=verbose,
+                                params=params, init_params=init_params)
+        self.set_params(lda=lda)
+
+    @property
+    def transmat_(self):
+        return self.transmat_
+
+    # FIXME: Implement me.
+    def _compute_log_likelihood(self, X):
+        return np.log(self.lda.transform(X))
+
+    # FIXME: Implement me.
+    def _do_mstep(self, stats):
+        super(MultinomialHMM, self)._do_mstep(stats)
+
+    # FIXME: Implement me.
     def _accumulate_sufficient_statistics(self, stats, X, framelogprob, posteriors,
                                           fwdlattice, bwdlattice):
         super(MultinomialHMM, self)._accumulate_sufficient_statistics(stats, X, framelogprob,

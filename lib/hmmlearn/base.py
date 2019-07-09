@@ -464,7 +464,7 @@ class _BaseHMM(BaseEstimator):
 
         self.monitor_._reset()
         if self.verbose:
-            logging.debug("Starting EM run")
+            logging.debug("Starting EM run: %s", self.get_params())
         for iter in range(self.n_iter):
             stats = self._initialize_sufficient_statistics()
             curr_logprob = 0
