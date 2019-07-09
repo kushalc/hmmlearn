@@ -251,7 +251,7 @@ class _BaseHMM(BaseEstimator):
 
             bwdlattice = self._do_backward_pass(framelogprob)
             posteriors.append(self._compute_posteriors(fwdlattice, bwdlattice))
-        return logprob, posteriors
+        return logprob, np.concatenate(posteriors, axis=1)
 
     def score(self, X, lengths=None):
         """Compute the log probability under the model.
@@ -351,7 +351,7 @@ class _BaseHMM(BaseEstimator):
             state_sequence.append(state_sequenceij)
             logprob += logprobij
 
-        state_sequence = np.array(state_sequence).flatten().astype(int)
+        state_sequence = np.concatenate(state_sequence)
         return logprob, state_sequence
 
     def predict(self, X, lengths=None):

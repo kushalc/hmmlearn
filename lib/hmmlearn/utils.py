@@ -75,8 +75,7 @@ def iter_from_X_lengths(X, lengths):
 
     elif len(X.shape) == 3:
         for ix in range(X.shape[0]):
-            for jx in range(lengths[ix]):
-                yield X[ix, range(jx+1), :]
+            yield X[ix, 0:lengths[ix], :]
 
     else:
         raise ValueError("unknown shape {!s}".format(X.shape))
