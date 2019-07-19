@@ -14,10 +14,9 @@ import numpy as np
 from scipy.special import logsumexp
 from sklearn import cluster, decomposition
 from sklearn.utils import check_random_state
-from sklearn.utils.validation import check_is_fitted
 
 from . import _utils
-from .base import DECODER_ALGORITHMS, _BaseHMM
+from .base import _BaseHMM
 from .stats import log_multivariate_normal_density
 from .utils import fill_covars, iter_from_X_lengths, normalize
 
@@ -1023,17 +1022,22 @@ class LDAHMM(MultinomialHMM):
         self.random_state = check_random_state(self.random_state)
         self.n_features = X.shape[-1]
 
-        self.lda.total_samples = np.sum(lengths)
         assert(self.lda.n_components == self.n_components)
+        Xt = np.concatenate([Xu for Xu in iter_from_X_lengths(X, lengths)])
         if not hasattr(self.lda, "components_"):
-            for Xu in iter_from_X_lengths(X, lengths):
-                self.lda.partial_fit(Xu)
+            self.lda.fit(Xt)
+
+        self.log_state_pr_ = np.log(self.lda.transform(Xt).sum(axis=0))
+        self.log_state_pr_ -= logsumexp(self.log_state_pr_)
 
     def _check(self):
         super(MultinomialHMM, self)._check()
 
     def _compute_log_likelihood(self, X):
-        return np.log(self.lda.transform(X))
+        # NOTE: This is Pr(S | X). We want Pr(X | S). Applying Bayes, this is Pr(X | S) ~ Pr(S | X) / Pr(S),
+        # since X is given in this specific context. Because we're not multiplying by Pr(X), please note that
+        # these log-likelihoods may not be strictly negative — they're off by a constant factor.
+        return np.log(self.lda.transform(X)) - self.log_state_pr_
 
     def _do_mstep(self, stats):
         super(MultinomialHMM, self)._do_mstep(stats)
@@ -1061,6 +1065,7 @@ class LDAHMM(MultinomialHMM):
         if 'e' in self.params:
             for ix, jx in zip(*np.where(X > 0)):
                 stats['obs'][:, jx] += posteriors[ix]
+
 
 class HTMM(MultinomialHMM):
     def __init__(self, lda=None, n_components=10,

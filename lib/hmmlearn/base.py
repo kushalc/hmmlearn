@@ -2,7 +2,6 @@ from __future__ import print_function
 
 import logging
 import string
-import sys
 from collections import deque
 
 import numpy as np
@@ -12,7 +11,8 @@ from sklearn.utils import check_random_state
 from sklearn.utils.validation import check_is_fitted
 
 from . import _hmmc
-from .utils import iter_from_X_lengths, log_mask_zero, log_normalize, normalize, check_array
+from .utils import (check_array, iter_from_X_lengths, log_mask_zero,
+                    log_normalize, normalize)
 
 #: Supported decoder algorithms.
 DECODER_ALGORITHMS = frozenset(("viterbi", "map"))
