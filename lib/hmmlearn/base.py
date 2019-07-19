@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import logging
+import re
 import string
 from collections import deque
 
@@ -464,7 +465,7 @@ class _BaseHMM(BaseEstimator):
 
         self.monitor_._reset()
         if self.verbose:
-            logging.debug("Starting EM run: %s", self.get_params())
+            logging.debug("Starting EM run: %s", re.sub(r"\s+", " ", repr(self.get_params())))
         for iter in range(self.n_iter):
             stats = self._initialize_sufficient_statistics()
             curr_logprob = 0
